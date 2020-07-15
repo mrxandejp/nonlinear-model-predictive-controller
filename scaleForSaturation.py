@@ -1,17 +1,20 @@
+# -*- coding: utf-8 -*-
+
 import numpy as np
 
 
-def scaleForSaturation(U, d, Nu, vmax):
+def scaleForSaturation(U, d_Rob, Nu, vmax):
 
     Ua = np.zeros((2, Nu))
+    # U = np.array(U)
 
     for i in range(0, Nu):
         v = U[0, i]
         w = U[1, i]
 
         # Cinematica Inversa
-        v1 = v + ((d*w)/2)
-        v2 = v - ((d*w)/2)
+        v1 = v + ((d_Rob*w)/2)
+        v2 = v - ((d_Rob*w)/2)
 
         # Proportional Saturation
         maxv = max(v1, v2)
@@ -27,17 +30,13 @@ def scaleForSaturation(U, d, Nu, vmax):
         else:
             scalemin = 1
 
-        scale = max(scalemin, scalemax)
+        scale = max(scalemax, scalemin)
 
-        v1a = v1 / scale
-        v2a = v2 / scale
+        v1 = v1 / scale
+        v2 = v2 / scale
 
-        # Cinematica Direta
-        vf = (v1a + v2a) / 2
-        wf = (v1a - v2a) / d
-
-        Ua[0, i] = vf
-        Ua[1, i] = wf
+        Ua[0, i] = (v1 + v2) / 2
+        Ua[1, i] = (v1 - v2) / d_Rob
         pass
 
     return Ua

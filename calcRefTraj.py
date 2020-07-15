@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import numpy as np
 import math
 from diffAngle import diffAngle
@@ -40,7 +42,7 @@ def calcRefTraj(lTi, SRx, SRy, SRt, trajX, trajY, trajTeta, V, W, Np, trajXp, tr
     trajPY[i] = trajY + (dl * math.sin(teta))
     trajPTeta[i] = trajTeta
 
-    for j in range(1, len(Np)):
+    for j in range(1, Np+1):
         # reached the end of the trajectory
         if lTi >= N-1:
             trajPX[j] = trajX

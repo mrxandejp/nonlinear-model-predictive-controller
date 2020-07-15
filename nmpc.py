@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import numpy as np
 from calcRefTraj import calcRefTraj
 from scaleForSaturation import scaleForSaturation
@@ -5,164 +7,183 @@ from costFunction import costFunction
 from calcUsteps import calcUsteps
 
 
-def NMPC(Xrefp, Yrefp, TRsx, TRsy, TRst, TRsv, TRsw, Xref, Yref, PHIref, Vref, Wref):
+def mysign(x):
+    if x > 0.0:
+        return 1
+    if x < 0.0:
+        return -1
+    return 0
+
+
+def Nmpc(Xrefp, Yrefp, TRsx, TRsy, TRst, TRsv, TRsw, Xref, Yref, PHIref, Vref, Wref, VXrefp, VYrefp):
     # Inicializando parâmetros do controlador
     Vmax = 0.4
-    d = 0.23
+    d_Rob = 0.2236
     N1 = 1
     Np = 10  # Horizonte de predição
     Nu = 2  # Horizonte de controle
 
     # L1, L2 e L3 são os pesos para cada componente da função de custo
-    L1 = 10
-    L2 = 2000
+    L1 = 800
+    L2 = 600
     L3 = 0.05
 
-    eta = 0.1
+    # RPROP
+    JStop = 0.05
     Imax = 15
-    I = 0
-    Delta = 0.1
-
-    # Inicializando parâmetro do otimizador
-    alpha = 0.015
+    delta = 0.1
+    eta_M = 0.5
+    eta_P = 1.2
+    step_Max = 0.1
+    step_Min = 0.000001
+    curr_Step = 0.1
 
     # Inicializando vetores do otimizador
-    Jgrad = np.zeros((4, 1))
-    Jgrad_prev = np.zeros((4, 1))
     Jsteps = np.zeros((8, 1))
+    Jgradient = np.zeros((4, 1))
+    Jgradient_prev = np.zeros((4, 1))
+    Jsteps_prev = np.empty([4, 1])
+    Jsteps_prev.fill(0.1)
+    iterationCount = 0
+    prevGrad = 0
+    currStep = 0
 
-    # Inicializando variáveis de controle
-    Ubest = np.zeros((2, 2))
-    Uref = np.zeros((2, 2))
     Uaux = np.zeros((2, 2))
+    # Uref = np.zeros((2, 2))
+    Ubest = np.zeros((2, 2))
+    Usteps = np.zeros((2, 8))
 
-    # Criando uma estrutura em forma de dicionários para guardar o valor da iteração anterior do controlador
-    SimRob = {'x': 0,
-              'y': 4139,
-              'teta': 0,
-              'v': 0,
-              'w': 0
-              }
+    simRobot = {'x': 0,
+                'y': 0,
+                'teta': 0,
+                'v': 0,
+                'w': 0
+                }
 
-    # Inicialização das variáveis do controlador
-    # Saída de controle desejada
-    Uref = [
+    simTarget = {'x': 0,
+                 'y': 0,
+                 'vx': 0,
+                 'vy': 0
+                 }
+
+    Uref = np.array([
         [Vref, Vref],
         [Wref, Wref]
-    ]
+    ])
 
-    # Cálculo da trajetória de referência
-    lTi = 0
+    simRobot['x'] = TRsx
+    simRobot['y'] = TRsy
+    simRobot['teta'] = TRst
+    simRobot['v'] = TRsv
+    simRobot['w'] = TRsw
 
-    tPX, tPY, tPTeta = calcRefTraj(
-        lTi, TRsx, TRsy, TRst, Xref, Yref, PHIref, Vref, Wref, Np, Xrefp, Yrefp)
+    simTarget['x'] = Xrefp
+    simTarget['y'] = Yrefp
+    simTarget['vx'] = VXrefp
+    simTarget['vy'] = VYrefp
 
-    # Atualiza o modelo do preditor
-    SimRob['x'] = TRsx
-    SimRob['y'] = TRsy
-    SimRob['teta'] = TRst
-    SimRob['v'] = TRsv
-    SimRob['w'] = TRsw
+    Uref = scaleForSaturation(Uref, d_Rob, Nu, Vmax)
 
-    # Loop de controle
-    # Reliza a saturação da velocidade das rodas com base na velocidade máxima
-    Uref = scaleForSaturation(Uref, d, Nu, Vmax)
+    Jcurrent = costFunction(simRobot['x'], simRobot['y'], simRobot['teta'], simRobot['v'],
+                            simRobot['w'], Uref, simTarget['x'], simTarget['y'], simTarget['vx'], simTarget['vy'], N1, Np, Nu, L1, L2, L3)
 
-    Jatual = costFunction(SimRob['x'], SimRob['y'], SimRob['teta'], SimRob['v'],
-                          SimRob['w'], Uref, tPX, tPY, tPTeta, N1, Np, Nu, L1, L2, L3)
+    Jbest = Jcurrent
 
-    Jbest = Jatual
+    # ---------------------------------------------------
+    #              Optimization loop
+    # ---------------------------------------------------
+    while (iterationCount < Imax) and (Jcurrent > JStop):
+        # get Usteps matrix
+        Usteps = calcUsteps(Uref, Nu, delta)
 
-    # Loop de otimização do Ubest que minimiza o Jbest
-    while (I < Imax) and (Jatual > eta):
-        Usteps = calcUsteps(Uref, Nu, Delta)
-
+        # Calculate Jsteps vector (do one simulation for each input set)
         for k in range(0, Nu):
             for j in range(0, 4):
-                # Atribui velocidade para cada passo U
                 for m in range(0, Nu):
                     if m == k:
-                        Uaux[0, m] = Usteps[0, (j+3*k)]
-                        Uaux[1, m] = Usteps[1, (j+3*k)]
+                        Uaux[0, m] = Usteps[0, (j+4*k)]
+                        Uaux[1, m] = Usteps[1, (j+4*k)]
                     else:
-                        Uaux[0, m] = Usteps[0, 0]
-                        Uaux[1, m] = Usteps[1, 0]
+                        Uaux[0, m] = Uref[0, 0]
+                        Uaux[1, m] = Uref[1, 0]
 
-                SimRob['x'] = TRsx
-                SimRob['y'] = TRsy
-                SimRob['teta'] = TRst
-                SimRob['v'] = TRsv
-                SimRob['w'] = TRsw
+                # Reset robot initial state for each simulation
+                simRobot['x'] = TRsx
+                simRobot['y'] = TRsy
+                simRobot['teta'] = TRst
+                simRobot['v'] = TRsv
+                simRobot['w'] = TRsw
 
-                Uaux = scaleForSaturation(Uaux, d, Nu, Vmax)
+                simTarget['x'] = Xrefp
+                simTarget['y'] = Yrefp
+                simTarget['vx'] = VXrefp
+                simTarget['vy'] = VYrefp
 
-                J = costFunction(SimRob['x'], SimRob['y'], SimRob['teta'], SimRob['v'],
-                                 SimRob['w'], Uaux, tPX, tPY, tPTeta, N1, Np, Nu, L1, L2, L3)
-                Jsteps[j + (3*k), 0] = J
+                # Limit wheel speed references in case of motor saturation (update references)
+                Uaux = scaleForSaturation(Uaux, d_Rob, Nu, Vmax)
 
-        # Cálculo do gradiente de J baseado no Jsteps
-        #Jgrad[3, 0]
-        for h in range(0, Nu):
-            Jgrad_prev[0+(2*h), 0] = Jgrad[0+(2*h), 0]
-            Jgrad_prev[0+(2*h), 0] = Jsteps[0+(4*h), 0] - Jsteps[1+(4*h), 0]
-            Jgrad_prev[1+(2*h), 0] = Jgrad[1+(2*h), 0]
-            Jgrad_prev[1+(2*h), 0] = Jsteps[2+(4*h), 0] - Jsteps[4+(4*h), 0]
+                # Do simulation with current Uaux and add to Jsteps vector
+                # Switches between trajectory controller and formation controller
+                J = costFunction(simRobot['x'], simRobot['y'], simRobot['teta'], simRobot['v'],
+                                 simRobot['w'], Uaux, simTarget['x'], simTarget['y'], simTarget['vx'], simTarget['vy'], N1, Np, Nu, L1, L2, L3)
 
-        # Gradiente conjugado Algoritmo de Polak-Bibieri
-        di = [0, 0]
-        x1 = di[:]
+                # Add J to Jsteps
+                Jsteps[j + (4*k), 0] = J
 
-        for z in range(0, Nu):
-            di[0] = Jgrad[(2*z)+0, 0]
-            di[1] = Jgrad[(2*z)+1, 0]
+        # Compute gradient of J from Jsteps
+        for i in range(0, Nu):
+            Jgradient_prev[2*i+0, 0] = Jgradient[2*i+0, 0]
+            Jgradient[2*i+0, 0] = Jsteps[4*i+0, 0] - Jsteps[4*i+1, 0]
 
-            x1[0] = (Uref[0, z] - (alpha * di[0]))
-            x1[1] = (Uref[1, z] - (alpha * di[1]))
+            Jgradient_prev[2*i+1, 0] = Jgradient[2*i+1, 0]
+            Jgradient[2*i+1, 0] = Jsteps[4*i+2, 0] - Jsteps[4*i+3, 0]
 
-            Jgrad_prev[(2*z)+0, 0] = Jgrad[(2*z)+0, 0]
-            Jgrad[(2*z)+0, 0] = Jsteps[(4*z)+0, 0] - Jsteps[(4*z)+1, 0]
+        # Minimization algorithm
+        for i in range(0, Nu):
+            for j in range(0, 2):
+                prevStep = Jsteps_prev[2*i+j, 0]
+                currGrad = Jgradient[2*i+j, 0]
 
-            Jgrad_prev[(2*z)+1, 0] = Jgrad[(2*z)+1, 0]
-            Jgrad[(2*z)+1, 0] = Jsteps[(4*z)+2, 0] - Jsteps[(4*z)+3, 0]
+                if prevGrad*currGrad > 0:
+                    curr_Step = min(prevStep*eta_P, step_Max)
+                    Uref[j, i] = (Uref[j, i] - (mysign(currGrad)*currStep))
+                    prevGrad = currGrad
+                else:
+                    if prevGrad*currGrad < 0:
+                        currStep = max(prevStep*eta_M, step_Min)
+                        prevGrad = 0
 
-            beta = 0
+                    if prevGrad*currGrad == 0:
+                        Uref[j, i] = (Uref[j, i] - (mysign(currGrad)*prevStep))
+                        prevGrad = currGrad
 
-            if (Jgrad[(2*z)+0, 0] >= eta) or (Jgrad[(2*z)+1, 0] >= eta):
+                    Jsteps_prev[2*i+j, 0] = currStep
 
-                t1 = Jgrad[(2*z)+0, 0] - Jgrad_prev[(2*z)+0, 0]
-                t2 = Jgrad[(2*z)+1, 0] - Jgrad_prev[(2*z)+1, 0]
+        # Reset robot initial state for each simulation
+        simRobot['x'] = TRsx
+        simRobot['y'] = TRsy
+        simRobot['teta'] = TRst
+        simRobot['v'] = TRsv
+        simRobot['w'] = TRsw
 
-                a1 = Jgrad[(2*z)+0, 0] * t1
-                a2 = Jgrad[(2*z)+1, 0] * t2
+        simTarget['x'] = Xrefp
+        simTarget['y'] = Yrefp
+        simTarget['vx'] = VXrefp
+        simTarget['vy'] = VYrefp
 
-                b1 = Jgrad_prev[(2*z)+0, 0] * Jgrad_prev[(2*z)+0, 0]
-                b2 = Jgrad_prev[(2*z)+1, 0] * Jgrad_prev[(2*z)+1, 0]
+        Uref = scaleForSaturation(Uref, d_Rob, Nu, Vmax)
 
-                beta = (a1 + a2) / (b1 + b2)
+        # Calculate new current cost (do simulation)
+        Jcurrent = costFunction(simRobot['x'], simRobot['y'], simRobot['teta'], simRobot['v'],
+                                simRobot['w'], Uref, simTarget['x'], simTarget['y'], simTarget['vx'], simTarget['vy'], N1, Np, Nu, L1, L2, L3)
 
-            Uref[0, z] = x1[0] + \
-                (alpha * (-Jgrad[(2*z)+0, 0] + (beta * Jgrad[(2*z)+0, 0])))
-            Uref[1, z] = x1[1] + \
-                (alpha * (-Jgrad[(2*z)+1, 0] + (beta * Jgrad[(2*z)+1, 0])))
+        # Update JBest
+        if Jcurrent < Jbest:
+            Jbest = Jcurrent
+            Ubest[0, 0] = Uref[0, 0]
+            Ubest[1, 0] = Uref[1, 0]
 
-        SimRob['x'] = TRsx
-        SimRob['y'] = TRsy
-        SimRob['teta'] = TRst
-        SimRob['v'] = TRsv
-        SimRob['w'] = TRsw
-
-        # ix SATURA A VELOCIDADE DAS RODAS QUE SERÃO USADAS NO PRÓXIMO LOOP DE CONTROLE (WHILE)
-
-        Uref = scaleForSaturation(Uref, d, Nu, Vmax)
-
-        Jatual = costFunction(SimRob['x'], SimRob['y'], SimRob['teta'], SimRob['v'],
-                              SimRob['w'], Uref, tPX, tPY, tPTeta, N1, Np, Nu, L1, L2, L3)
-
-        if Jatual < Jbest:
-            Jbest = Jatual
-            Ubest = Uref
-
-        I = I+1
+        iterationCount = iterationCount+1
 
     # FIM DO WHILE
 

@@ -1,45 +1,63 @@
+# -*- coding: utf-8 -*-
+
 import math
 from diffAngle import diffAngle
+import numpy as np
 
 PI = math.pi
 
 
-def costFunction(SimRobx, SimRoby, SimRobteta, SimRobv, SimRobw, Uref, tPX, tPY, tPTeta, N1, Np, Nu, L1, L2, L3):
-    sumX = 0
-    sumY = 0
-    sumT = 0
-    #sumDU  = 0
-    t = 0.01
+def costFunction(SimRobx, SimRoby, SimRobteta, SimRobv, SimRobw, Ut, SimTargetx, SimTargety, SimTargetvx, SimTargetvy, N1, Np, Nu, L1, L2, L3):
+
+    sum_cost = 0
+
+    # Others
+    sim_time_step = 0.01
+    bfc = 1
+    dval = 0
 
     for i in range(N1, Np+1):  # Executa 10 vezes
         # corrigindo problemas com angulos
         if i <= Nu:
-            v = Uref[0, i-1]
-            w = Uref[1, i-1]
+            v = Ut[0, i-1]
+            w = Ut[1, i-1]
         else:
-            v = Uref[0, Nu]
-            w = Uref[1, Nu]
+            v = Ut[0, Nu-1]
+            w = Ut[1, Nu-1]
 
-        j = 0
-        while j < 4:
+        for j in range(0, 4):
+            cteta = math.cos(SimRobteta)
+            steta = math.sin(SimRobteta)
+
             if SimRobteta > PI:
                 SimRobteta = SimRobteta - 2*PI
 
-            SimRobteta = SimRobteta + t*w
-            SimRobx = SimRobx + t * math.cos(SimRobteta) * v
-            SimRoby = SimRoby + t * math.sin(SimRobteta) * v
-            j += 1
+            SimRobteta = SimRobteta + w*sim_time_step
+            SimRobx = SimRobx + sim_time_step*(v*cteta)
+            SimRoby = SimRoby + sim_time_step*(v*steta)
 
-        sumX = sumX + pow((tPX[i-1] - SimRobx), 2)
-        sumY = sumY + pow((tPY[i-1] - SimRoby), 2)
+            SimTargetx = SimTargetx + sim_time_step*SimTargetvx
+            SimTargety = SimTargety + sim_time_step*SimTargetvy
 
-        #erroTeta = diffAngle(tPTeta,SimRobteta)
-        erroTeta = diffAngle(tPTeta[i-1], SimRobteta)
-        sumT = sumT + pow(erroTeta, 2)
+            SimTargetvx = SimTargetvx * bfc
+            SimTargetvy = SimTargetvy * bfc
+
+        RobotTargetDist = math.sqrt(
+            pow((SimTargetx - SimRobx), 2) + pow((SimTargety - SimRoby), 2))
+
+        RBx = (SimTargetx - SimRobx) / RobotTargetDist
+        RBy = (SimTargety - SimRoby) / RobotTargetDist
+
+        RobotTargetAngle = math.atan2(RBy, RBx)
+
+        sum_cost = sum_cost + L1*abs(dval - RobotTargetDist)
+
+        sum_cost = sum_cost + L2*abs(diffAngle(RobotTargetAngle, SimRobteta))
+        # sum_cost = sum_cost + L2*diffAngle(RobotTargetAngle, SimRobteta)
+
         pass
-
-    sumDU = pow((SimRobv - Uref[0, 0]), 2) + pow((SimRobw - Uref[0, 1]), 2)
-    # Horizonte de controle, por isso fica fora do FOR
-    J = (L1 * (sumX + sumY)) + (L2 * sumT) + (L3 * sumDU)
+    # ALEXANDRE
+    deltaU = L3*(abs(SimRobv - Ut[0, 0]) + abs(SimRobw - Ut[1, 0]))
+    J = (sum_cost + deltaU)
 
     return J
