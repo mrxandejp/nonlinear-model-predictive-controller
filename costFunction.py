@@ -7,11 +7,11 @@ import numpy as np
 PI = math.pi
 
 
-def costFunction(SimRobx, SimRoby, SimRobteta, SimRobv, SimRobw, Ut, SimTargetx, SimTargety, SimTargetvx, SimTargetvy, N1, Np, Nu, L1, L2, L3):
-
+def costFunction(SimRobx, SimRoby, SimRobteta, SimRobv, SimRobw, Ut, SimTargetx, SimTargety ,SimTargetvx, SimTargetvy , N1, Np, Nu, L1, L2, L3):
+    
     sum_cost = 0
 
-    # Others
+    #Others
     sim_time_step = 0.01
     bfc = 1
     dval = 0
@@ -26,7 +26,7 @@ def costFunction(SimRobx, SimRoby, SimRobteta, SimRobv, SimRobw, Ut, SimTargetx,
             w = Ut[1, Nu-1]
 
         for j in range(0, 4):
-            cteta = math.cos(SimRobteta)
+            cteta = math.cos(SimRobteta) #VERIFICAR NOVAMENTE SE ESTA EM RAD
             steta = math.sin(SimRobteta)
 
             if SimRobteta > PI:
@@ -42,21 +42,20 @@ def costFunction(SimRobx, SimRoby, SimRobteta, SimRobv, SimRobw, Ut, SimTargetx,
             SimTargetvx = SimTargetvx * bfc
             SimTargetvy = SimTargetvy * bfc
 
-        RobotTargetDist = math.sqrt(
-            pow((SimTargetx - SimRobx), 2) + pow((SimTargety - SimRoby), 2))
+        RobotTargetDist = math.sqrt(pow((SimTargetx - SimRobx),2) + pow((SimTargety - SimRoby),2))
 
         RBx = (SimTargetx - SimRobx) / RobotTargetDist
         RBy = (SimTargety - SimRoby) / RobotTargetDist
 
         RobotTargetAngle = math.atan2(RBy, RBx)
-
+        
         sum_cost = sum_cost + L1*abs(dval - RobotTargetDist)
 
         sum_cost = sum_cost + L2*abs(diffAngle(RobotTargetAngle, SimRobteta))
         # sum_cost = sum_cost + L2*diffAngle(RobotTargetAngle, SimRobteta)
 
         pass
-    # ALEXANDRE
+    #ALEXANDRE
     deltaU = L3*(abs(SimRobv - Ut[0, 0]) + abs(SimRobw - Ut[1, 0]))
     J = (sum_cost + deltaU)
 

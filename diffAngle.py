@@ -4,7 +4,7 @@ import math
 
 PI = math.pi
 
-
+#VERifICAR O QuE Foi uSAdONA CadeiRa e ROboTIcA 
 def diffAngle(a1, a2):
     ang = a1-a2
 
